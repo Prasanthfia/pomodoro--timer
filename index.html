@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pomodoro Timer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: 'Inter', sans-serif;
+    background: #1a0a0a;
+    background-image: radial-gradient(ellipse at center top, #3a0a0a 0%, #1a0a0a 60%);
+  }
+  .wrap { text-align: center; }
+  .mode-tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.06); border-radius: 12px; padding: 4px; margin: 0 auto 40px; width: fit-content; }
+  .mode-btn {
+    padding: 8px 20px; border: none; border-radius: 8px; background: transparent;
+    color: rgba(255,255,255,0.5); font-family: 'Inter'; font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .mode-btn.active { background: rgba(255,255,255,0.12); color: #fff; }
+  .ring-wrap { position: relative; width: 280px; height: 280px; margin: 0 auto 36px; }
+  svg { transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 8; }
+  .ring-fill { fill: none; stroke: #e85d04; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 0.5s ease, stroke 0.5s; }
+  .time-display {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .time {
+    font-family: 'Bebas Neue'; font-size: 80px; color: #fff;
+    letter-spacing: 4px; line-height: 1;
+    text-shadow: 0 0 40px rgba(232,93,4,0.4);
+  }
+  .mode-label { color: rgba(255,255,255,0.4); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }
+  .controls { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 40px; }
+  .btn-main {
+    width: 72px; height: 72px; border-radius: 50%; border: none;
+    background: #e85d04; color: #fff; font-size: 24px; cursor: pointer;
+    transition: all 0.2s; box-shadow: 0 0 30px rgba(232,93,4,0.4);
+  }
+  .btn-main:hover { transform: scale(1.08); box-shadow: 0 0 50px rgba(232,93,4,0.6); }
+  .btn-sec {
+    width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.15);
+    background: transparent; color: rgba(255,255,255,0.6); font-size: 16px; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-sec:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
+  .sessions { display: flex; gap: 8px; justify-content: center; margin-bottom: 32px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.1); transition: background 0.3s; }
+  .dot.done { background: #e85d04; }
+  .stats { display: flex; gap: 32px; justify-content: center; }
+  .stat { text-align: center; }
+  .stat-val { color: #fff; font-size: 22px; font-weight: 600; }
+  .stat-lbl { color: rgba(255,255,255,0.3); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mode-tabs">
+    <button class="mode-btn active" onclick="setMode('pomodoro',this)">Pomodoro</button>
+    <button class="mode-btn" onclick="setMode('short',this)">Short Break</button>
+    <button class="mode-btn" onclick="setMode('long',this)">Long Break</button>
+  </div>
+  <div class="ring-wrap">
+    <svg width="280" height="280" viewBox="0 0 280 280">
+      <circle class="ring-bg" cx="140" cy="140" r="120"/>
+      <circle class="ring-fill" id="ring" cx="140" cy="140" r="120" stroke-dasharray="753.98" stroke-dashoffset="0"/>
+    </svg>
+    <div class="time-display">
+      <div class="time" id="time">25:00</div>
+      <div class="mode-label" id="modeLabel">Focus Time</div>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="btn-sec" onclick="skip()">⏭</button>
+    <button class="btn-main" id="playBtn" onclick="toggle()">▶</button>
+    <button class="btn-sec" onclick="reset()">↺</button>
+  </div>
+  <div class="sessions" id="sessions"></div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val" id="completedCount">0</div><div class="stat-lbl">Completed</div></div>
+    <div class="stat"><div class="stat-val" id="totalMin">0</div><div class="stat-lbl">Minutes</div></div>
+  </div>
+</div>
+<script>
+  const modes = {
+    pomodoro:{label:'Focus Time',mins:25,color:'#e85d04'},
+    short:{label:'Short Break',mins:5,color:'#0ea5e9'},
+    long:{label:'Long Break',mins:15,color:'#22c55e'}
+  };
+  let mode='pomodoro', running=false, timer=null, secs=25*60, totalSecs=25*60, completed=0, sessions=0;
+  const CIRC=753.98;
+  function fmt(s){return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
+  function update(){
+    document.getElementById('time').textContent=fmt(secs);
+    const off=CIRC*(1-secs/totalSecs);
+    document.getElementById('ring').style.strokeDashoffset=off;
+    document.getElementById('ring').style.stroke=modes[mode].color;
+    document.getElementById('playBtn').textContent=running?'⏸':'▶';
+    document.title=`${fmt(secs)} - ${modes[mode].label}`;
+  }
+  function toggle(){
+    running=!running;
+    if(running){timer=setInterval(()=>{secs--;if(secs<=0){done();}update();},1000);}
+    else{clearInterval(timer);}
+    update();
+  }
+  function done(){
+    clearInterval(timer);running=false;
+    if(mode==='pomodoro'){completed++;sessions++;document.getElementById('completedCount').textContent=completed;document.getElementById('totalMin').textContent=completed*25;}
+    renderSessions();
+    setTimeout(()=>{alert(`${modes[mode].label} complete! 🎉`);},100);
+  }
+  function reset(){clearInterval(timer);running=false;secs=totalSecs;update();}
+  function skip(){done();}
+  function setMode(m,btn){
+    clearInterval(timer);running=false;mode=m;
+    totalSecs=modes[m].mins*60;secs=totalSecs;
+    document.getElementById('modeLabel').textContent=modes[m].label;
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');update();
+  }
+  function renderSessions(){
+    const max=4; const s=document.getElementById('sessions');
+    s.innerHTML=[...Array(max)].map((_,i)=>`<div class="dot ${i<(sessions%max||sessions&&sessions%max===0?max:sessions%max)?'done':''}"></div>`).join('');
+  }
+  renderSessions();update();
+</script>
+</body>
+</html>
